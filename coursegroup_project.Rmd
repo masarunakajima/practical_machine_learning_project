@@ -1,0 +1,86 @@
+---
+title: "groupware_project"
+output: html_document
+date: '2022-12-24'
+---
+
+## Loading libraries
+```{r , echo=TRUE}
+library(dplyr)
+library(caret)
+library(corrplot)
+library(caretEnsemble)
+
+```
+
+## Loading Data
+```{r , echo=TRUE}
+dat <- read.csv("data/pml-training.csv")
+print(dim(dat))
+
+```
+
+## Cleaning  and splitting data
+Delete columns if more than 90% of the values are NA
+```{r , echo=TRUE}
+dat_na <- mutate_all(dat, list(~na_if(.,"")))
+dat_na <- dat_na %>%  select_if(function(col) sum(is.na(col)) < nrow(dat)*0.9)
+dat_na <- select_if(dat_na, function(col) is.numeric(col))
+dat_na <- select(dat_na, -c(X, raw_timestamp_part_1, raw_timestamp_part_2))
+dat_na$classe <- dat$classe
+
+print(dim(dat_na))
+set.seed(12345)
+inTrain <- createDataPartition(y=dat_na$classe, p=0.7, list=FALSE)
+training <- dat_na[inTrain,]
+testing<- dat_na[-inTrain,]
+
+```
+I decided to only use numeric features.  
+I also decided to exclude features `X`, `raw_timestamp_part_1`, and `raw_timestamp_part_2`
+since they are note related to the movements.
+
+
+## Training
+
+```{r , echo=TRUE}
+control <- trainControl(method="cv")
+mod_rpart <- train(classe ~., data=training, method = 'rpart', trControl = control)
+mod_lda <- train(classe ~., data=training, method = 'lda', trControl = control)
+mod_gbm <- train(classe ~., data=training, method = 'gbm', trControl = control, verbose=FALSE)
+mod_knn <- train(classe ~., data=training, method = 'knn', trControl = control)
+mod_rf <- train(classe ~., data=training, method = 'rf', trControl = control, verbose=FALSE)
+
+
+pred_rpart <- as.factor(predict(mod_rpart,newdata=testing))
+pred_lda <- as.factor(predict(mod_lda,newdata=testing))
+pred_gbm <- as.factor(predict(mod_gbm,newdata=testing))
+pred_knn <- as.factor(predict(mod_knn,newdata=testing))
+pred_rf <- as.factor(predict(mod_rf,newdata=testing))
+
+ref <- as.factor(testing$classe)
+
+print(postResample(pred_rpart, ref))
+print(postResample(pred_lda, ref))
+print(postResample(pred_gbm, ref))
+print(postResample(pred_knn, ref))
+print(postResample(pred_rf, ref))
+
+print(confusionMatrix(pred_rf, ref))
+
+```
+Random forest method produced the most accurate model.
+
+
+## Prediction on the testing set
+```{r , echo=TRUE}
+val_dat <- read.csv("data/pml-testing.csv")
+data.frame(X=val_dat$X, prediction= predict(mod_rf, newdata=val_dat))
+```
+
+## Important variables
+```{r , echo=TRUE}
+varImp(mod_rf)
+```
+As shown above, `roll_belt`, `pitch_forearm`, and `yaw_belt` were most important.
+
